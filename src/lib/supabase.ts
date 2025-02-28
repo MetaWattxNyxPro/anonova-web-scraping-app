@@ -1,18 +1,32 @@
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from '../types/database';
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "../types/database";
 
-// Default to a placeholder URL if environment variables are not set
-const supabaseUrl = 'https://placeholder.supabase.co';
-const supabaseAnonKey = 'placeholder-key';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Missing Supabase environment variables");
+}
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: false,
     detectSessionInUrl: true,
-    flowType: 'pkce'
+    flowType: "pkce",
+    debug: true, // Enable debug mode temporarily to help diagnose issues
   },
   db: {
-    schema: 'public'
-  }
+    schema: "public",
+  },
+  global: {
+    headers: {
+      "X-Client-Info": "anonova-web",
+    },
+  },
+});
+
+// Add error logging
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log("Auth state changed:", event, session);
 });

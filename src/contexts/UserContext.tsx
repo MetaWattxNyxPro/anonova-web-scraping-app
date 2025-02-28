@@ -14,6 +14,7 @@ interface UserContextType {
   hasUsedFreeCredits: boolean;
   setHasUsedFreeCredits: (value: boolean) => void;
   refreshCredits: () => Promise<void>;
+  updateUserCredits: (change: number) => Promise<void>;
   loading: boolean;
 }
 
@@ -25,11 +26,34 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [credits, setCredits] = useState(0);
   const [hasUsedFreeCredits, setHasUsedFreeCredits] = useState(false);
 
-  const refreshCredits = async () => {
+  const handleUpdateUserCredits = async (change: number) => {
+    if (!user) return;
+
+    // Validate credit change
+    if (change < 0 && Math.abs(change) > credits) {
+      throw new Error('Insufficient credits available');
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('update_user_credits', {
+        user_id: user.id,
+        credit_change: change
+      });
+
+      if (error) throw error;
+
+      setCredits(data);
+    } catch (err) {
+      console.error('Error updating credits:', err);
+      throw err;
+    }
+  };
+
+  // Function to fetch user data
+  const fetchUserData = async () => {
     if (!user) return;
 
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('users')
         .select('credits, has_used_free_credits, plan_id')
@@ -42,32 +66,68 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCredits(userData.credits);
       setHasUsedFreeCredits(userData.has_used_free_credits);
     } catch (err) {
-      console.error('Error fetching user credits:', err);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching user data:', err);
     }
   };
 
-  // Fetch credits whenever user changes
+  const refreshCredits = async () => {
+    if (!user) return;
+
+    try {
+      await fetchUserData();
+    } catch (err) {
+      console.error('Error fetching user credits:', err);
+    }
+  };
+
   useEffect(() => {
     if (user) {
-      // Immediately fetch credits when user logs in
+      // Initial fetch
       const fetchInitialCredits = async () => {
-        await refreshCredits();
+        await fetchUserData();
+        setLoading(false);
       };
+
       fetchInitialCredits();
+
+      // Set up real-time subscription
+      const subscription = supabase
+        .channel('credits_changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'users',
+            filter: `id=eq.${user.id}`
+          },
+          async (payload) => {
+            const newData = payload.new;
+            if (payload.new) {
+              fetchUserData();
+              setHasUsedFreeCredits(newData.has_used_free_credits);
+              setLoading(false);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        subscription.unsubscribe();
+      };
     } else {
       setCredits(0);
       setHasUsedFreeCredits(false);
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   return (
     <UserContext.Provider value={{
       credits,
       setCredits,
       hasUsedFreeCredits,
+      updateUserCredits: handleUpdateUserCredits,
       setHasUsedFreeCredits,
       refreshCredits,
       loading
@@ -77,10 +137,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
-export const useUser = () => {
+const useUser = () => {
   const context = useContext(UserContext);
   if (context === undefined) {
     throw new Error('useUser must be used within a UserProvider');
   }
   return context;
 };
+
+
+export { useUser }

@@ -71,6 +71,7 @@
   "dashboard": {
     "welcome": "Welcome Back, {{name}}. The Grid Awaits.",
     "subtitle": "Your gateway to advanced data extraction.",
+    "extraction": "Extraction",
     "overview": "Overview",
     "orders": "Orders",
     "subscription": "Subscription",

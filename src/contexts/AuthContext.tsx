@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 interface AuthContextType {
   isAuthenticated: boolean;
   isVerified: boolean;
+  isLoading: boolean;
   verificationEmail: string | null;
   user: User | null;
   setVerificationEmail: (email: string | null) => void;
@@ -28,22 +29,27 @@ export class AuthenticationError extends Error {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     // Check current auth status
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const initializeAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       const isUserVerified = !!session?.user.email_confirmed_at;
       setIsAuthenticated(!!session);
       setIsVerified(isUserVerified);
       setUser(session?.user ?? null);
+      setIsLoading(false);
 
       // If user is authenticated but not verified, store their email
       if (session && !isUserVerified) {
         setVerificationEmail(session.user.email);
       }
-    });
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
     const {
@@ -238,6 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider value={{
       isAuthenticated,
       isVerified,
+      isLoading,
       verificationEmail,
       user,
       setVerificationEmail,

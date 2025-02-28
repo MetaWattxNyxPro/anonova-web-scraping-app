@@ -22,6 +22,7 @@ const MySubscription = () => {
   const [currentSubscription, setCurrentSubscription] = useState<{
     plan: Plan | null;
     status: string;
+    subscription_start_date: string | null;
     nextBilling: string | null;
     paymentMethod: {
       type: string;
@@ -37,6 +38,7 @@ const MySubscription = () => {
   }>({
     plan: null,
     status: 'loading',
+    subscription_start_date: null,
     nextBilling: null,
     paymentMethod: null,
     billingHistory: []
@@ -45,6 +47,40 @@ const MySubscription = () => {
   const [selectedPlanInfo, setSelectedPlanInfo] = useState<Plan | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const { user } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isLogin, setIsLogin] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [subscriptionData, setSubscriptionData] = useState<{
+    nextBilling: string | null;
+    paymentMethod: {
+      type: string;
+      last4: string;
+      expiry: string;
+    } | null;
+  }>({
+    nextBilling: null,
+    paymentMethod: null
+  });
+  const [error, setError] = useState('');
+
+  const calculateDuration = (startDate: string) => {
+    if (!startDate) return 0;
+    
+    const start = new Date(startDate);
+    // Check if date is valid
+    if (isNaN(start.getTime())) return 0;
+    
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - start.getTime());
+    const diffMonths = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)); // Average days per month
+    return diffMonths;
+  };
+
+  // Pluralize months correctly
+  const pluralizeMonths = (count: number) => {
+    if (count === 0) return 'Less than 1 month';
+    return `${count} month${count === 1 ? '' : 's'}`;
+  };
 
   useEffect(() => {
     const fetchSubscriptionData = async () => {
@@ -57,6 +93,7 @@ const MySubscription = () => {
           .select(`
             plan_id,
             subscription_status,
+            subscription_start_date,
             next_billing_date,
             pricing_plans (
               id,
@@ -108,6 +145,7 @@ const MySubscription = () => {
         setCurrentSubscription({
           plan,
           status: userData.subscription_status,
+          subscription_start_date: userData.subscription_start_date,
           nextBilling: userData.next_billing_date,
           paymentMethod: paymentData && paymentData.type ? {
             type: paymentData.type,
@@ -120,6 +158,16 @@ const MySubscription = () => {
             amount: bill.amount,
             status: bill.status
           }))
+        });
+
+        // Update subscriptionData state
+        setSubscriptionData({
+          nextBilling: userData.next_billing_date,
+          paymentMethod: paymentData && paymentData.type ? {
+            type: paymentData.type,
+            last4: paymentData.last4,
+            expiry: paymentData.expiry
+          } : null
         });
       } catch (error) {
         console.error('Error fetching subscription data:', error);
@@ -153,7 +201,13 @@ const MySubscription = () => {
     return (plan.price * 12) - plan.annualPrice;
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date: Date | string) => {
+    if (!date) return 'Not available';
+    
+    // Check if date is valid
+    const dateObj = new Date(date);
+    if (isNaN(dateObj.getTime())) return 'Not available';
+    
     return new Date(date).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -224,8 +278,8 @@ const MySubscription = () => {
               <div className="flex items-center gap-3">
                 <Zap className="w-5 h-5 text-[#0F0]" />
                 <div>
-                  <div className="font-semibold">{currentSubscription.plan?.name || 'Loading...'}</div>
-                  <div className="text-sm text-gray-400">Status</div>
+                  <div className="text-sm text-gray-400">Current Plan</div>
+                  <div className="font-mono text-[#0F0]">{currentSubscription.plan?.name || 'Loading...'}</div>
                 </div>
               </div>
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#0F0]/10 text-[#0F0]">
@@ -233,37 +287,76 @@ const MySubscription = () => {
               </span>
             </div>
 
-            <div className="flex items-center justify-between p-4 border border-[#0F0]/20 rounded-lg">
-              <div className="flex items-center gap-3">
-                <Calendar className="w-5 h-5 text-[#0F0]" />
-                <div>
-                  <div className="font-semibold">Next Billing</div>
-                  <div className="text-sm text-gray-400">
-                    {currentSubscription.nextBilling 
-                      ? formatDate(new Date(currentSubscription.nextBilling))
-                      : 'No billing date set'}
-                  </div>
+            {/* Credit Details */}
+            <div className="mt-4 space-y-3 pt-4 border-t border-[#0F0]/20">
+              <h4 className="text-sm font-semibold text-[#0F0] mb-3">Credit Details</h4>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Credit Rate:</span>
+                <span className="text-[#0F0] font-mono">
+                  ${currentSubscription.plan?.pricePerCredit.toFixed(3) || '--'}/credit
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Minimum Purchase:</span>
+                <span className="text-[#0F0] font-mono">
+                  {currentSubscription.plan?.minimumCredits.toLocaleString() || '--'} credits
+                </span>
+              </div>
+              {currentSubscription.plan?.includedCredits && currentSubscription.plan.includedCredits > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Monthly Credits:</span>
+                  <span className="text-[#0F0] font-mono">
+                    {currentSubscription.plan.includedCredits.toLocaleString()}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Subscription Info */}
+            <div className="mt-6 pt-4 border-t border-[#0F0]/20">
+              <h4 className="text-sm font-semibold text-[#0F0] mb-3">Subscription Details</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Started On:</span>
+                  <span className="text-[#0F0] font-mono">
+                    {formatDate(currentSubscription.subscription_start_date || new Date())}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Next Billing:</span>
+                  <span className="text-[#0F0] font-mono">
+                    {subscriptionData.nextBilling ? formatDate(subscriptionData.nextBilling) : 'No billing date set'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Duration:</span>
+                  <span className="text-[#0F0] font-mono">
+                    {pluralizeMonths(calculateDuration(currentSubscription.subscription_start_date || ''))}
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-between p-4 border border-[#0F0]/20 rounded-lg">
-              <div className="flex items-center gap-3">
-                <CreditCard className="w-5 h-5 text-[#0F0]" />
-                <div>
-                  <div className="font-semibold">
-                    {currentSubscription.paymentMethod?.type || 'No payment method'}
-                  </div>
-                  <div className="text-sm text-gray-400">
-                    {currentSubscription.paymentMethod?.type === 'card' && (
-                      <>Card ending in {currentSubscription.paymentMethod.last4} (expires {currentSubscription.paymentMethod.expiry})</>
+            {/* Payment Method */}
+            <div className="mt-6 pt-4 border-t border-[#0F0]/20">
+              <h4 className="text-sm font-semibold text-[#0F0] mb-3">Payment Method</h4>
+              <div className="flex items-center justify-between p-4 border border-[#0F0]/20 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <CreditCard className="w-5 h-5 text-[#0F0]" />
+                  <div className="flex-1">
+                    {subscriptionData.paymentMethod ? (
+                      <div className="font-mono text-[#0F0]">
+                        Card ending in {subscriptionData.paymentMethod.last4} (expires {subscriptionData.paymentMethod.expiry})
+                      </div>
+                    ) : (
+                      <div className="font-mono text-[#0F0]">No payment method</div>
                     )}
                   </div>
                 </div>
+                <Button variant="secondary" className="text-sm">
+                  Update
+                </Button>
               </div>
-              <Button variant="secondary" className="text-sm">
-                Update
-              </Button>
             </div>
           </div>
         </div>

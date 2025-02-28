@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Terminal, CreditCard, History, Download, Settings, Users, Wallet, Home, HelpCircle, LogOut, User, MessageSquare } from 'lucide-react';
+import { Terminal, CreditCard, History, Download, Settings, Users, Wallet, Home, HelpCircle, LogOut, User, MessageSquare, Menu, ChevronRight, Zap } from 'lucide-react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import MatrixBackground from '../MatrixBackground';
 import { useAuth } from '../../contexts/AuthContext';
@@ -12,13 +12,17 @@ const DashboardLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { setIsAuthenticated, setIsVerified, user } = useAuth();
-  const { credits, loading } = useUser();
+  const { credits, loading: creditsLoading } = useUser();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   
+  // Get current route for breadcrumb
+  const currentRoute = location.pathname.split('/').filter(Boolean);
+  
   const navigation = [
     { name: t('dashboard.overview'), path: '/dashboard', icon: Terminal },
+    { name: t('dashboard.extraction'), path: '/dashboard/extraction', icon: Zap },
     { name: t('dashboard.orders'), path: '/dashboard/orders', icon: History },
     { name: t('dashboard.subscription'), path: '/dashboard/subscription', icon: CreditCard },
     { name: t('dashboard.credits'), path: '/dashboard/credits', icon: Wallet },
@@ -62,8 +66,39 @@ const DashboardLayout = () => {
     <div className="min-h-screen bg-black text-white font-mono relative">
       <MatrixBackground />
       
-      {/* Sidebar */}
-      <div className={`fixed top-0 left-0 h-full w-64 bg-black/80 backdrop-blur-sm border-r border-[#0F0]/20 transform transition-transform duration-300 ease-in-out z-50 ${
+      {/* Mobile Breadcrumb Navigation */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-sm border-b border-[#0F0]/20">
+        <div className="p-4">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="text-gray-400 hover:text-[#0F0] transition-colors flex items-center gap-2"
+            >
+              <Terminal className="w-6 h-6" />
+              <span className="text-sm">{isSidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}</span>
+            </button>
+            <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
+              <Link to="/" className="text-gray-400 hover:text-[#0F0] transition-colors">
+                <Home className="w-4 h-4" />
+              </Link>
+              {currentRoute.map((route, index) => (
+                <React.Fragment key={index}>
+                  <ChevronRight className="w-4 h-4 text-gray-600" />
+                  <Link
+                    to={`/${currentRoute.slice(0, index + 1).join('/')}`}
+                    className="text-gray-400 hover:text-[#0F0] transition-colors capitalize"
+                  >
+                    {route}
+                  </Link>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Sidebar - Hidden on Mobile */}
+      <div className={`fixed top-0 left-0 h-full w-64 bg-black/80 backdrop-blur-sm border-r border-[#0F0]/20 transform transition-transform duration-300 ease-in-out z-40 ${
         isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="p-6">
@@ -111,16 +146,17 @@ const DashboardLayout = () => {
       </div>
 
       {/* Main Content */}
-      <div className={`transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-0'}`}>
+      <div className={`transition-all duration-300 ${isSidebarOpen ? 'ml-0 md:ml-64' : 'ml-0'} mt-16 md:mt-0`}>
         {/* Top Bar */}
-        <div className="sticky top-0 z-40 bg-black/80 backdrop-blur-sm border-b border-[#0F0]/20">
+        <div className="sticky top-0 z-40 bg-black/80 backdrop-blur-sm border-b border-[#0F0]/20 hidden md:block">
           <div className="flex items-center justify-between h-16 px-6">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="text-gray-400 hover:text-[#0F0] transition-colors"
+                className="text-gray-400 hover:text-[#0F0] transition-colors flex items-center gap-2"
               >
-                <Terminal className="w-6 h-6" />
+                <Menu className="w-6 h-6" />
+                <span className="text-sm">{isSidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}</span>
               </button>
               <NavigationButtons />
             </div>
@@ -135,8 +171,11 @@ const DashboardLayout = () => {
               {/* Credits */}
               <div className="flex items-center gap-2 px-4 py-2 bg-black rounded-full border border-[#0F0]/20">
                 <span className="text-[#0F0] font-mono">
-                  {loading ? (
-                    <span className="animate-pulse">Loading...</span>
+                  {creditsLoading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="animate-pulse">Loading credits</span>
+                      <span className="animate-pulse">...</span>
+                    </span>
                   ) : (
                     `${credits} ${t('dashboard.credits')}`
                   )}

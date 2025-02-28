@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Users, UserPlus, Shield, User, Mail, Key, Eye, EyeOff, Loader, ArrowRight, Hash, Terminal, Zap, Database, AlertCircle, CreditCard, Check, Lock, Globe } from 'lucide-react';
+import { Search, Users, UserPlus, Shield, User, Mail, Key, Eye, EyeOff, Loader, ArrowRight, Hash, Terminal, Zap, Database, AlertCircle, CreditCard, Check, Lock, Globe, Facebook, Instagram, Twitter, Linkedin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Button from './Button';
 import GlitchText from './GlitchText';
@@ -8,15 +8,65 @@ import { useAuth, AuthenticationError } from '../contexts/AuthContext';
 import { useUser } from '../contexts/UserContext';
 import { useTranslation } from 'react-i18next';
 import NavigationButtons from './NavigationButtons';
+import { runApifyExtraction, type ExtractedData } from '../lib/apify';
+
+type Platform = 'instagram' | 'linkedin' | 'facebook' | 'twitter';
 
 interface ExtractionConfig {
   isHashtagMode: boolean;
   profileUrl: string;
   hashtag: string;
+  state?: string;
+  country: string;
+  language: string;
+  maxResults: number;
+  maxLeadsPerInput?: number;
   extractFollowers: boolean;
   extractFollowing: boolean;
   creditsToUse: number;
+  platform: Platform;
 }
+
+interface ExtractionResult {
+  status: 'completed' | 'failed';
+  data: ExtractedData[];
+  error?: string;
+}
+
+const platforms = [
+  {
+    id: 'instagram' as Platform,
+    name: 'Instagram',
+    icon: Instagram,
+    color: 'text-pink-500',
+    description: 'Extract data from Instagram profiles and hashtags',
+    features: ['Profile followers', 'Profile following', 'Hashtag data']
+  },
+  {
+    id: 'linkedin' as Platform,
+    name: 'LinkedIn',
+    icon: Linkedin,
+    color: 'text-blue-500',
+    description: 'Extract professional network data',
+    features: ['Profile connections', 'Company employees', 'Job postings']
+  },
+  {
+    id: 'facebook' as Platform,
+    name: 'Facebook',
+    icon: Facebook,
+    color: 'text-blue-600',
+    description: 'Extract Facebook profiles and groups',
+    features: ['Profile friends', 'Group members', 'Page followers']
+  },
+  {
+    id: 'twitter' as Platform,
+    name: 'X/Twitter',
+    icon: Twitter,
+    color: 'text-gray-200',
+    description: 'Extract Twitter followers and engagement',
+    features: ['Profile followers', 'Tweet engagement', 'Hashtag analysis']
+  }
+];
 
 const features = [
   {
@@ -53,14 +103,22 @@ const StartScrapingPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   const [extractionConfig, setExtractionConfig] = useState<ExtractionConfig>({
     isHashtagMode: false,
     profileUrl: '',
     hashtag: '',
+    state: '',
+    country: 'us',
+    language: 'en',
+    maxResults: 10,
+    maxLeadsPerInput: 100,
     extractFollowers: true,
     extractFollowing: false,
-    creditsToUse: hasUsedFreeCredits ? 500 : 1
+    creditsToUse: hasUsedFreeCredits ? 500 : 1,
+    platform: 'instagram'
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -93,6 +151,63 @@ const StartScrapingPage = () => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleStartExtraction = async () => {
+    const keyword = extractionConfig.isHashtagMode ? extractionConfig.hashtag : extractionConfig.profileUrl;
+    
+    if (!keyword || keyword.trim() === '') {
+      setError('Please enter a valid ' + (extractionConfig.isHashtagMode ? 'hashtag' : 'profile URL'));
+      return;
+    }
+
+    setIsExtracting(true);
+    setError('');
+    setExtractionResult(null);
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const attemptExtraction = async (): Promise<ExtractedData[]> => {
+      try {
+        return await runApifyExtraction({
+          keyword,
+          country: extractionConfig.country,
+          language: extractionConfig.language,
+          maxLeads: extractionConfig.maxLeadsPerInput || extractionConfig.maxResults,
+          proxyConfiguration: {
+            useApifyProxy: true
+          }
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('timed out') && retryCount < maxRetries) {
+          retryCount++;
+          console.log(`Retry attempt ${retryCount}/${maxRetries}`);
+          return attemptExtraction();
+        }
+        throw error;
+      }
+    };
+
+    try {
+      const results = await attemptExtraction();
+      setExtractionResult({
+        status: 'completed',
+        data: results
+      });
+    } catch (err) {
+      console.error('Extraction error:', err);
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : 'Failed to extract data. Please try again.';
+
+      setExtractionResult({
+        status: 'failed',
+        data: [],
+        error: errorMessage
+      });
+    } finally {
+      setIsExtracting(false);
     }
   };
 
@@ -270,100 +385,273 @@ const StartScrapingPage = () => {
               ) : (
                 <>
                   <div className="space-y-6">
+                    {/* Platform Selection */}
                     <div>
-                      <label className="block text-sm text-gray-400 mb-2">Extraction Mode</label>
-                      <div className="grid grid-cols-2 gap-4">
-                        <button
-                          onClick={() => setExtractionConfig(prev => ({ ...prev, isHashtagMode: false }))}
-                          className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${
-                            !extractionConfig.isHashtagMode
-                              ? 'border-[#0F0] bg-[#0F0]/10'
-                              : 'border-gray-700 hover:border-[#0F0]/50'
-                          }`}
-                        >
-                          <Users className="w-4 h-4" />
-                          <span>Profile</span>
-                        </button>
-                        <button
-                          onClick={() => setExtractionConfig(prev => ({ ...prev, isHashtagMode: true }))}
-                          className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${
-                            extractionConfig.isHashtagMode
-                              ? 'border-[#0F0] bg-[#0F0]/10'
-                              : 'border-gray-700 hover:border-[#0F0]/50'
-                          }`}
-                        >
-                          <Hash className="w-4 h-4" />
-                          <span>Hashtag</span>
-                        </button>
+                      <label className="block text-sm text-gray-400 mb-2">Select Platform</label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {platforms.map((platform) => (
+                          <button
+                            key={platform.id}
+                            onClick={() => setExtractionConfig(prev => ({ ...prev, platform: platform.id }))}
+                            className={`flex flex-col items-center gap-3 p-4 rounded-lg border transition-all ${
+                              extractionConfig.platform === platform.id
+                                ? 'border-[#0F0] bg-[#0F0]/10'
+                                : 'border-gray-700 hover:border-[#0F0]/50'
+                            }`}
+                          >
+                            <platform.icon className={`w-8 h-8 ${platform.color}`} />
+                            <span className="text-sm font-medium">{platform.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                      
+                      {/* Instagram-specific extraction mode */}
+
+                      <div className="mt-4 p-4 border border-[#0F0]/20 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Shield className="w-4 h-4 text-[#0F0]" />
+                          <span className="text-sm text-[#0F0]">Platform Features</span>
+                        </div>
+                        <ul className="space-y-1">
+                          {platforms.find(p => p.id === extractionConfig.platform)?.features.map((feature, index) => (
+                            <li key={index} className="text-sm text-gray-400 flex items-center gap-2">
+                              <div className="w-1 h-1 bg-[#0F0] rounded-full" />
+                              {feature}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm text-gray-400 mb-2">
-                        {extractionConfig.isHashtagMode ? 'Hashtag' : 'Profile URL'}
-                      </label>
+                      <label className="block text-sm text-gray-400 mb-2">Target</label>
                       <input
                         type="text"
-                        value={extractionConfig.isHashtagMode ? extractionConfig.hashtag : extractionConfig.profileUrl}
-                        onChange={(e) => setExtractionConfig(prev => ({
-                          ...prev,
-                          [extractionConfig.isHashtagMode ? 'hashtag' : 'profileUrl']: e.target.value
-                        }))}
+                        value={extractionConfig.hashtag}
+                        onChange={(e) => setExtractionConfig(prev => ({ ...prev, hashtag: e.target.value }))}
                         className="w-full bg-black/50 border border-[#0F0]/30 rounded-lg py-3 px-4 text-white placeholder-gray-500 focus:border-[#0F0] focus:ring-1 focus:ring-[#0F0] transition-all"
-                        placeholder={extractionConfig.isHashtagMode ? "Enter hashtag without #" : "Enter Instagram profile URL"}
+                        placeholder="Enter a Hashtag"
                       />
                     </div>
 
-                    {!extractionConfig.isHashtagMode && (
+                    {extractionConfig.platform !== 'linkedin' && (
                       <div>
-                        <label className="block text-sm text-gray-400 mb-2">Data to Extract</label>
-                        <div className="grid grid-cols-2 gap-4">
-                          <label className="flex items-center gap-2 p-3 rounded-lg border border-gray-700 hover:border-[#0F0]/50 transition-all cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={extractionConfig.extractFollowers}
-                              onChange={(e) => setExtractionConfig(prev => ({ ...prev, extractFollowers: e.target.checked }))}
-                              className="w-4 h-4 border-2 border-[#0F0]/50 rounded bg-black text-[#0F0] focus:ring-[#0F0] focus:ring-offset-0"
-                            />
-                            <span>Followers</span>
-                          </label>
-                          <label className="flex items-center gap-2 p-3 rounded-lg border border-gray-700 hover:border-[#0F0]/50 transition-all cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={extractionConfig.extractFollowing}
-                              onChange={(e) => setExtractionConfig(prev => ({ ...prev, extractFollowing: e.target.checked }))}
-                              className="w-4 h-4 border-2 border-[#0F0]/50 rounded bg-black text-[#0F0] focus:ring-[#0F0] focus:ring-offset-0"
-                            />
-                            <span>Following</span>
-                          </label>
-                        </div>
+                        <label className="block text-sm text-gray-400 mb-2">State</label>
+                        <input
+                          type="text"
+                          value={extractionConfig.state || ''}
+                          onChange={(e) => setExtractionConfig(prev => ({ ...prev, state: e.target.value }))}
+                          className="w-full bg-black/50 border border-[#0F0]/30 rounded-lg py-3 px-4 text-white placeholder-gray-500 focus:border-[#0F0] focus:ring-1 focus:ring-[#0F0] transition-all"
+                          placeholder="Enter a State"
+                        />
                       </div>
                     )}
 
                     <div>
-                      <label className="block text-sm text-gray-400 mb-2">Credits to Use</label>
+                      <label className="block text-sm text-gray-400 mb-2">Max Leads per Input</label>
                       <div className="relative">
-                        <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                           type="number"
-                          value={extractionConfig.creditsToUse}
-                          onChange={(e) => setExtractionConfig(prev => ({ ...prev, creditsToUse: parseInt(e.target.value) || 0 }))}
-                          min={hasUsedFreeCredits ? 500 : 1}
-                          className="w-full bg-black/50 border border-[#0F0]/30 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-500 focus:border-[#0F0] focus:ring-1 focus:ring-[#0F0] transition-all"
+                          value={extractionConfig.maxLeadsPerInput || 100}
+                          onChange={(e) => setExtractionConfig(prev => ({ 
+                            ...prev, 
+                            maxLeadsPerInput: Math.max(100, parseInt(e.target.value) || 100)
+                          }))}
+                          min="100"
+                          className="w-full bg-black/50 border border-[#0F0]/30 rounded-lg py-3 px-4 text-white placeholder-gray-500 focus:border-[#0F0] focus:ring-1 focus:ring-[#0F0] transition-all"
+                          placeholder="100"
                         />
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                          leads
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-400 mt-2">
-                        {hasUsedFreeCredits ? (
-                          <>Minimum 500 credits required</>
-                        ) : (
-                          <>First extraction: Use as little as 1 credit!</>
-                        )}
-                      </div>
+                      <p className="mt-1 text-xs text-gray-400">Minimum 100 leads per input</p>
                     </div>
 
-                    <Button className="w-full">
-                      START_EXTRACTION.exe
+                    {/* LinkedIn-specific fields */}
+                    {extractionConfig.platform === 'linkedin' && (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-2">Country</label>
+                          <select
+                            value={extractionConfig.country}
+                            onChange={(e) => setExtractionConfig(prev => ({ ...prev, country: e.target.value }))}
+                            className="w-full bg-black/50 border border-[#0F0]/30 rounded-lg py-3 px-4 text-white focus:border-[#0F0] focus:ring-1 focus:ring-[#0F0] transition-all"
+                          >
+                            <option value="us">United States</option>
+                            <option value="gb">United Kingdom</option>
+                            <option value="ca">Canada</option>
+                            <option value="au">Australia</option>
+                            <option value="de">Germany</option>
+                            <option value="fr">France</option>
+                            <option value="es">Spain</option>
+                            <option value="it">Italy</option>
+                            <option value="nl">Netherlands</option>
+                            <option value="se">Sweden</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-2">Language</label>
+                          <select
+                            value={extractionConfig.language}
+                            onChange={(e) => setExtractionConfig(prev => ({ ...prev, language: e.target.value }))}
+                            className="w-full bg-black/50 border border-[#0F0]/30 rounded-lg py-3 px-4 text-white focus:border-[#0F0] focus:ring-1 focus:ring-[#0F0] transition-all"
+                          >
+                            <option value="en">English</option>
+                            <option value="es">Spanish</option>
+                            <option value="fr">French</option>
+                            <option value="de">German</option>
+                            <option value="it">Italian</option>
+                            <option value="nl">Dutch</option>
+                            <option value="sv">Swedish</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-2">Max Leads per Input</label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              value={extractionConfig.maxLeadsPerInput || 10}
+                              onChange={(e) => setExtractionConfig(prev => ({ 
+                                ...prev, 
+                                maxLeadsPerInput: e.target.value === '' ? undefined : parseInt(e.target.value)
+                              }))}
+                              min="1"
+                              max="100"
+                              className="w-full bg-black/50 border border-[#0F0]/30 rounded-lg py-3 px-4 text-white placeholder-gray-500 focus:border-[#0F0] focus:ring-1 focus:ring-[#0F0] transition-all"
+                              placeholder="10"
+                              onBlur={(e) => {
+                                const value = parseInt(e.target.value);
+                                if (!isNaN(value)) {
+                                  setExtractionConfig(prev => ({
+                                    ...prev,
+                                    maxLeadsPerInput: Math.max(1, Math.min(value, 100))
+                                  }));
+                                }
+                              }}
+                            />
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                              leads
+                            </div>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-400">Maximum 100 leads per input</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <Button 
+                      className="w-full"
+                      onClick={handleStartExtraction}
+                      disabled={isExtracting || (!extractionConfig.hashtag && !extractionConfig.profileUrl)}
+                    >
+                      {isExtracting ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader className="w-5 h-5 animate-spin" />
+                          EXTRACTING_DATA.exe
+                        </span>
+                      ) : (
+                        'START_EXTRACTION.exe'
+                      )}
                     </Button>
+
+                    {/* Extraction Results */}
+                    {extractionResult && (
+                      <div className="mt-8 -mx-8 px-8 py-6 border-t border-[#0F0]/20">
+                        <h3 className="text-xl font-bold text-[#0F0] mb-4">
+                          Extraction Results
+                          {extractionResult.status === 'completed' && (
+                            <span className="text-sm font-normal text-gray-400 ml-2">
+                              ({extractionResult.data.length} records found)
+                            </span>
+                          )}
+                        </h3>
+
+                        {extractionResult.status === 'failed' ? (
+                          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-red-500 flex items-center gap-2">
+                            <AlertCircle className="w-5 h-5" />
+                            {extractionResult.error}
+                          </div>
+                        ) : extractionResult.data.length > 0 ? (
+                          <div className="overflow-x-auto">
+                            <table className="w-full">
+                              <thead>
+                                <tr className="border-b border-[#0F0]/20">
+                                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0F0]">Lead</th>
+                                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0F0]">Username</th>
+                                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0F0]">Profile Link</th>
+                                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0F0]">Emails</th>
+                                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0F0]">Phones</th>
+                                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0F0]">Summary</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#0F0]/10">
+                                {extractionResult.data.map((item, index) => (
+                                  <tr key={index} className="hover:bg-[#0F0]/5 transition-colors">
+                                    <td className="px-6 py-4">{item.lead || '-'}</td>
+                                    <td className="px-6 py-4">{item.username || '-'}</td>
+                                    <td className="px-6 py-4">
+                                      <a 
+                                        className="text-[#0F0] hover:underline"
+                                        href={item.userLink}
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          window.open(item.userLink, '_blank', 'noopener,noreferrer');
+                                        }}
+                                        target="_blank"
+                                        rel="noopener noreferrer" 
+                                      >
+                                        {item.username || item.userLink.split('/').pop() || 'View Profile'}
+                                      </a>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      {item.emails.length > 0 ? (
+                                        <div className="space-y-1">
+                                          {item.emails.map((email, i) => ( 
+                                            <a
+                                              key={i}
+                                              href={`mailto:${email}`}
+                                              className="text-[#0F0] hover:underline block"
+                                            >
+                                              {email}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      {item.phones.length > 0 ? (
+                                        <div className="space-y-1">
+                                          {item.phones.map((phone, i) => (
+                                            <a
+                                              key={i}
+                                              href={`tel:${phone}`}
+                                              className="text-[#0F0] hover:underline block"
+                                            >
+                                              {phone}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <div className="max-w-xs truncate" title={item.summary}>
+                                        {item.summary || '-'}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="text-center py-8 text-gray-400">
+                            No results found for your search criteria
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </>
               )}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Database, Calendar, Search, Terminal, Loader } from 'lucide-react';
+import { Download, Database, Calendar, Search, Terminal, Loader, AlertCircle } from 'lucide-react';
 import Button from '../Button';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
@@ -297,18 +297,41 @@ const DataExport = () => {
         <div className="overflow-x-auto">
           <table className="w-full">
             {loading ? (
-              <div className="px-6 py-12 text-center">
-                <Loader className="w-12 h-12 text-[#0F0] mx-auto mb-4 animate-spin" />
-                <p className="text-gray-400">Loading extractions...</p>
-              </div>
+              <tbody>
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center">
+                    <Loader className="w-12 h-12 text-[#0F0] mx-auto mb-4 animate-spin" />
+                    <p className="text-gray-400">Loading extractions...</p>
+                  </td>
+                </tr>
+              </tbody>
             ) : error ? (
-              <div className="px-6 py-12 text-center">
-                <div className="text-red-500 mb-4">{error}</div>
-                <Button onClick={fetchExtractions}>
-                  Retry
-                </Button>
-              </div>
-            ) : filteredLists.length > 0 ? (
+              <tbody>
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center">
+                    <div className="text-red-500 mb-4">{error}</div>
+                    <Button onClick={fetchExtractions}>
+                      Retry
+                    </Button>
+                  </td>
+                </tr>
+              </tbody>
+            ) : filteredLists.length === 0 ? (
+              <tbody>
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center">
+                    <Terminal className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                    <p className="text-gray-400">No extractions found. Start your first extraction!</p>
+                    <Button 
+                      className="mt-4"
+                      onClick={() => navigate('/start-scraping')}
+                    >
+                      Start Extraction
+                    </Button>
+                  </td>
+                </tr>
+              </tbody>
+            ) : (
               <>
                 <thead>
                   <tr className="border-b border-[#0F0]/20">
@@ -372,17 +395,6 @@ const DataExport = () => {
                   ))}
                 </tbody>
               </>
-            ) : (
-              <div className="px-6 py-12 text-center">
-                <Terminal className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400">No extractions found. Start your first extraction!</p>
-                <Button 
-                  className="mt-4"
-                  onClick={() => navigate('/start-scraping')}
-                >
-                  Start Extraction
-                </Button>
-              </div>
             )}
           </table>
         </div>
